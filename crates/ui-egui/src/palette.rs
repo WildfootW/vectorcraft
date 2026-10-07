@@ -23,10 +23,53 @@ pub fn items() -> Vec<(String, String, String)> {
     items
 }
 
-/// A palette label in the UI language: each `›`-separated menu segment and the command label
+/// A palette label in a language: each `›`-separated menu segment and the command label
 /// translate on their own.
-fn shown_label(label: &str) -> String {
-    label.split(" › ").map(crate::i18n::t).collect::<Vec<_>>().join(" › ")
+fn shown_label(lang: crate::i18n::Lang, label: &str) -> String {
+    label.split(" › ").map(|s| crate::i18n::tr(lang, s)).collect::<Vec<_>>().join(" › ")
+}
+
+/// One searchable item: `items()`'s (label, id, shortcut) plus the shown label and the lowercased
+/// texts the query is matched against.
+struct Entry {
+    id: String,
+    shortcut: String,
+    shown: String,
+    label_lower: String,
+    shown_lower: String,
+    id_lower: String,
+}
+
+/// The items with their shown labels, built once per UI language and shortcut generation (not
+/// per keystroke: translating and lowercasing every label each frame is what a typed query would
+/// otherwise cost).
+fn entries() -> std::sync::Arc<Vec<Entry>> {
+    entries_for(crate::i18n::current(), crate::shortcut_editor::GENERATION.load(std::sync::atomic::Ordering::Relaxed))
+}
+
+fn entries_for(lang: crate::i18n::Lang, generation: u64) -> std::sync::Arc<Vec<Entry>> {
+    use std::sync::{Arc, Mutex};
+    /// (language code, shortcut generation, entries)
+    type Cached = (&'static str, u64, Arc<Vec<Entry>>);
+    static CACHE: Mutex<Option<Cached>> = Mutex::new(None);
+    let mut cache = CACHE.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some((l, g, entries)) = cache.as_ref()
+        && *l == lang.code()
+        && *g == generation
+    {
+        return Arc::clone(entries);
+    }
+    let entries: Arc<Vec<Entry>> = Arc::new(
+        items()
+            .into_iter()
+            .map(|(label, id, shortcut)| {
+                let shown = shown_label(lang, &label);
+                Entry { label_lower: label.to_lowercase(), shown_lower: shown.to_lowercase(), id_lower: id.to_lowercase(), id, shortcut, shown }
+            })
+            .collect(),
+    );
+    *cache = Some((lang.code(), generation, Arc::clone(&entries)));
+    entries
 }
 
 pub fn show(app: &mut VectorcraftApp, ctx: &egui::Context) {
@@ -35,15 +78,12 @@ pub fn show(app: &mut VectorcraftApp, ctx: &egui::Context) {
     }
     let t = Tokens::get(ctx);
     let q = app.ui.palette_query.to_lowercase();
-    let items = items();
-    let matches: Vec<&(String, String, String)> = items
+    let entries = entries();
+    let matches: Vec<&Entry> = entries
         .iter()
-        .filter(|(l, id, _)| {
-            q.is_empty() || {
-                // Match the English text (what agents document), the shown text and the id.
-                let shown = shown_label(l).to_lowercase();
-                q.split_whitespace().all(|w| l.to_lowercase().contains(w) || shown.contains(w) || id.to_lowercase().contains(w))
-            }
+        .filter(|e| {
+            // Match the English text (what agents document), the shown text and the id.
+            q.is_empty() || q.split_whitespace().all(|w| e.label_lower.contains(w) || e.shown_lower.contains(w) || e.id_lower.contains(w))
         })
         .take(14)
         .collect();
@@ -54,21 +94,18 @@ pub fn show(app: &mut VectorcraftApp, ctx: &egui::Context) {
             let r = ui.add(egui::TextEdit::singleline(&mut app.ui.palette_query).hint_text(tl!("Search commands and tools…")).desired_width(500.0));
             r.request_focus();
             ui.add_space(6.0);
-            for (i, (label, id, sc)) in matches.iter().enumerate() {
+            for (i, e) in matches.iter().enumerate() {
                 let resp = ui.add(
-                    egui::Button::new(shown_label(label))
-                        .shortcut_text(menus::pretty_shortcut(sc))
-                        .min_size(egui::vec2(500.0, 24.0))
-                        .selected(i == 0),
+                    egui::Button::new(&e.shown).shortcut_text(menus::pretty_shortcut(&e.shortcut)).min_size(egui::vec2(500.0, 24.0)).selected(i == 0),
                 );
                 if resp.clicked() {
-                    run = Some(id.clone());
+                    run = Some(e.id.clone());
                 }
             }
             if ui.input(|i| i.key_pressed(egui::Key::Enter))
                 && let Some(first) = matches.first()
             {
-                run = Some(first.1.clone());
+                run = Some(first.id.clone());
             }
         });
     });
@@ -79,5 +116,35 @@ pub fn show(app: &mut VectorcraftApp, ctx: &egui::Context) {
         } else {
             menus::invoke(app, &id, json!({}));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::i18n::Lang;
+
+    /// The entries are built once per language and shortcut generation, and the shown labels are
+    /// in that language while the English text and the id stay searchable.
+    #[test]
+    fn entries_are_cached_per_language_and_generation() {
+        let en = entries_for(Lang::EN, 7);
+        assert!(std::sync::Arc::ptr_eq(&en, &entries_for(Lang::EN, 7)), "same language and generation: cached");
+        let save_as = en.iter().find(|e| e.id == "file.saveAs").unwrap();
+        assert_eq!(save_as.shown, "File › Save As…");
+        let zh = Lang::from_code("zh-hant").unwrap();
+        let zh_entries = entries_for(zh, 7);
+        assert!(!std::sync::Arc::ptr_eq(&en, &zh_entries), "another language: rebuilt");
+        let save_as = zh_entries.iter().find(|e| e.id == "file.saveAs").unwrap();
+        assert_eq!(save_as.shown, format!("{} › {}", crate::i18n::tr(zh, "File"), crate::i18n::tr(zh, "Save As…")));
+        assert_ne!(save_as.shown, "File › Save As…");
+        // A typed query matches the English text, the shown text and the id.
+        assert!(
+            save_as.label_lower.contains("save as")
+                && save_as.shown_lower.contains(&crate::i18n::tr(zh, "Save As…").to_lowercase())
+                && save_as.id_lower.contains("saveas")
+        );
+        let again = entries_for(zh, 8);
+        assert!(!std::sync::Arc::ptr_eq(&zh_entries, &again), "shortcuts edited: rebuilt");
     }
 }

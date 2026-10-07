@@ -395,9 +395,25 @@ pub fn fill_stroke_proxy(ui: &mut Ui, fill: &Paint, stroke: &Paint, mixed: (bool
     }
 }
 
-/// A compact dropdown. Returns the chosen index.
+/// A compact dropdown over UI strings (translated). Returns the chosen index. Lists of names that
+/// are user data (artboards, font styles, profiles, the user's presets) use [`dropdown_names`].
 pub fn dropdown(ui: &mut Ui, id: impl std::hash::Hash + std::fmt::Debug, current: &str, options: &[&str], width: f32) -> Option<usize> {
     dropdown_with(ui, id, current, options, width, |_| true)
+}
+
+/// [`dropdown`] over names shown as they are: user data is never translated, even when it
+/// happens to match a UI string (an artboard named "Layers" stays "Layers"). The caller
+/// translates the built-in entries of a mixed list itself.
+pub fn dropdown_names(ui: &mut Ui, id: impl std::hash::Hash + std::fmt::Debug, current: &str, options: &[&str], width: f32) -> Option<usize> {
+    combo(ui, id, current, width, false, |ui| {
+        let mut chosen = None;
+        for (i, o) in options.iter().enumerate() {
+            if ui.add(egui::Button::selectable(*o == current, *o)).clicked() {
+                chosen = Some(i);
+            }
+        }
+        chosen
+    })
 }
 
 /// [`dropdown`] whose options can be disabled (`enabled(index)`: greyed and not choosable).

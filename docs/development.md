@@ -94,7 +94,9 @@ tells the two scripts apart, so the Traditional catalog is never shown to a Simp
 - Translations are clean-room: written from the meaning of the English text in ordinary vocabulary, never
   from another product's localisation resources. Product and technology names stay in Latin letters.
 - Not translated on purpose: status-bar messages and errors (agents and tests read them), names that are
-  user data (layers, swatches, fonts, documents), the tab title's colour mode. Not done yet: locale-aware
+  user data (layers, swatches, fonts, documents), the tab title's colour mode. `widgets::dropdown` translates its
+  options (UI strings); a list of names (artboards, font styles, ICC profiles, the user's presets) uses
+  `widgets::dropdown_names`, which shows them as they are, and translates its built-in entries itself. Not done yet: locale-aware
   number and date formats, right-to-left layout, locale detection on the web. Chinese and Japanese UI text
   is drawn with craft-fonts' BIZ UDPGothic when the build embeds it (see Fonts above), else with an installed
   system font; the glyph test checks Latin-script catalogs always and the CJK ones only with craft-fonts.

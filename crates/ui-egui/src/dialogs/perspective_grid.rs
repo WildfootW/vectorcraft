@@ -217,10 +217,17 @@ fn name_row(app: &mut VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) {
     if current.is_none() && !name.is_empty() {
         d.fields.insert("name".into(), json!(""));
     }
-    let shown = current.map_or(CUSTOM, |p| p.name.as_str());
-    let names: Vec<&str> = std::iter::once(CUSTOM).chain(presets.iter().map(|p| p.name.as_str())).collect();
+    // "[Custom]" and the built-in presets are UI text; the user's presets are shown by their names.
+    let label = |name: &str| {
+        if name == CUSTOM || vectorcraft_tools::distort::perspective::define::is_builtin(name) { tl!(name).to_string() } else { name.to_string() }
+    };
+    let shown = label(current.map_or(CUSTOM, |p| p.name.as_str()));
+    let names: Vec<String> = std::iter::once(CUSTOM).chain(presets.iter().map(|p| p.name.as_str())).map(label).collect();
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
     widgets::label_row(ui, tl!("Preset:"), LABEL, |ui| {
-        if let Some(p) = widgets::dropdown(ui, "persp-preset", shown, &names, 200.0).and_then(|i| i.checked_sub(1)).and_then(|i| presets.get(i)) {
+        if let Some(p) =
+            widgets::dropdown_names(ui, "persp-preset", &shown, &names, 200.0).and_then(|i| i.checked_sub(1)).and_then(|i| presets.get(i))
+        {
             let mut fields = json!(p);
             fields[SHOWN] = fields["units"].clone();
             if let Some(o) = fields.as_object() {

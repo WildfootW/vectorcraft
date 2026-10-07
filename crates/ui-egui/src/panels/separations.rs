@@ -77,7 +77,7 @@ fn profile_dropdown(ui: &mut Ui, id: &str, current: &str, kind: ProfileKind, ext
     let names: Vec<String> =
         extra.map(str::to_string).into_iter().chain(cms::profiles().into_iter().filter(|p| p.kind == kind).map(|p| p.name)).collect();
     let refs: Vec<&str> = names.iter().map(String::as_str).collect();
-    widgets::dropdown(ui, id, current, &refs, 210.0).map(|i| names[i].clone())
+    widgets::dropdown_names(ui, id, current, &refs, 210.0).map(|i| names[i].clone())
 }
 
 fn settings_section(app: &mut VectorcraftApp, ui: &mut Ui) {

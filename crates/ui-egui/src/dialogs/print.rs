@@ -260,12 +260,21 @@ fn preset_rows(app: &mut VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) {
     let current = serde_json::from_value::<PrintSettings>(settings(d)).ok();
     let same = current.is_some() && current == app.session.print_preset_settings(&name);
     let names: Vec<&str> = std::iter::once(DEFAULT_PRESET).chain(app.session.prefs.print_presets.iter().map(|p| p.name.as_str())).collect();
+    // The default preset and "[Custom]" are UI text; the user's presets are shown by their names.
+    let shown_names: Vec<&str> = names.iter().map(|n| if *n == DEFAULT_PRESET { tl!(n) } else { n }).collect();
     let mut picked = None;
     let asking = d.fields.contains_key(SAVE_AS);
     let mut ask = false;
     row_with(ui, tl!("Print Preset:"), TOP_LABEL_WIDTH, |ui| {
-        picked =
-            widgets::dropdown(ui, "print-preset", if same { &name } else { CUSTOM }, &names, 300.0).and_then(|i| names.get(i)).map(|n| n.to_string());
+        picked = widgets::dropdown_names(
+            ui,
+            "print-preset",
+            if same { shown_names.get(names.iter().position(|n| *n == name).unwrap_or(usize::MAX)).copied().unwrap_or(&name) } else { tl!(CUSTOM) },
+            &shown_names,
+            300.0,
+        )
+        .and_then(|i| names.get(i))
+        .map(|n| n.to_string());
         let save = ui.add_enabled_ui(!asking, |ui| widgets::flat_button(ui, tl!("Save Preset…"), 96.0)).inner;
         ask = save.on_hover_text(tl!("Save these settings as a print preset")).clicked();
     });
